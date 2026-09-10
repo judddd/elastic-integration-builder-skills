@@ -1,0 +1,23 @@
+{
+  "skill_name": "elastic-integration-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我有一批网络设备日志样本（每行一条，类似 `<134>1 2026-09-10T01:02:03Z fw01 vendor - - - src=10.0.0.8 dst=8.8.8.8 action=deny policy=12`）。请先判断能不能复用 Elastic 已有 integration；如果不能，请生成一个完整的自定义 Fleet integration 文件夹，要求 ECS 合规，TCP 收集，并带 overview dashboard 说明。输出目录放到 /tmp/ei-eval-kvlog/。",
+      "expected_output": "Match Report plus a complete package folder with manifest, data_stream, tcp stream, ingest pipeline mapping to ECS (source.ip/destination.ip/event.action/etc), fields.yml, sample_event.json, and kibana/docs guidance.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "样本是标准 CEF：`CEF:0|Fortinet|FortiGate|7.0|0000000013|traffic:forward|5|src=192.168.1.1 dst=10.0.0.5`。不要从零造轮子——告诉我应该用哪个官方 integration/配置路径，并说明还要不要自定义 package。",
+      "expected_output": "Recommend reusing CEF and/or fortinet_fortigate (or CEF generic) with clear rationale; no full greenfield package unless gaps are explicit.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我拿到一个 JSON API 导出（NDJSON），字段有 ts、client_ip、url、status、user。请按 elastic.co build-new-integration 流程搭一个 httpjson/logfile 可用的 integration 包骨架，字段对齐 ECS（@timestamp、source.ip、url.original、http.response.status_code、user.name），并写出 ingest pipeline 与 sample_event。输出到 /tmp/ei-eval-jsonapi/。",
+      "expected_output": "Scaffolded integration with ECS-typed fields, pipeline converting JSON to ECS, sample_event.json, package layout matching elastic-package conventions.",
+      "files": []
+    }
+  ]
+}
