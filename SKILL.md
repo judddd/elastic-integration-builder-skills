@@ -147,6 +147,10 @@ Validate with `_ingest/pipeline/_simulate` using the user’s samples before dec
 - Custom fields: `data_stream/<ds>/fields/fields.yml` with correct types.
 - Never map an ECS `ip` field as `keyword`/`text`. Cross-check types against the chosen ECS tag.
 
+**`external: ecs` hard rule:** `external: ecs` is only resolved by `elastic-package build`. A rsync/zip fallback leaves those entries unresolved; Fleet then maps them as `keyword` (`source.ip` / `destination.ip` become keyword, Discover shows a type-conflict warning on `logs-*`). 要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。
+
+When using the rsync zip fallback (or any path that is not `elastic-package build`), every ECS field in `fields/ecs.yml` must include an explicit `type:` (for example `type: ip` on `source.ip`). `external: ecs` may remain as documentation, but it is not sufficient by itself.
+
 ### 7) Dashboards and content
 
 Under `kibana/`:
@@ -183,6 +187,8 @@ elastic-package build
 ```
 
 Fallback (no CLI — **must still ship a zip**):
+
+要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。 Before rsync/zip, confirm every `fields/ecs.yml` entry has `type:` — otherwise Fleet will install `source.ip` as `keyword`.
 
 ```bash
 # From repo: packages/<name>/ with manifest.yml name + version
@@ -237,10 +243,12 @@ When finishing, always summarize:
 - Shipping only a Logstash conf and calling it an “integration” when the user asked for Fleet/integration.  
 - Finishing with only a source folder and **no** `<name>-<version>.zip` for Fleet upload.  
 - Zipping loose files at the archive root (must be `<name>-<version>/…`).  
+- Never hardcode customer/lab IPs in Discover or dashboards; use fields from the vendor logs (e.g. `observer.ip` from syslog source) and ES|QL rules for cross-index joins.
 - Emitting `add_fields` with an empty `fields:` map from optional Handlebars vars (Agent input fails permanently; looks like “syslog not arriving”).  
 - Defaulting listen port to **514** without checking the Agent host — 514 is often taken by rsyslog / otel / another beat; prefer documenting a high port (e.g. 5514) or verifying bind success in Fleet Agent components.  
 - Assuming vendor syslog supports TCP when many products (e.g. JumpServer) are **UDP-only**; match the vendor protocol in both the package input and the device `SYSLOG_ADDR`.  
 - Mapping everything as `keyword` / leaving `source.ip` as text.  
+- Shipping a rsync/zip with `external: ecs` and no explicit `type:` — Fleet will not import ECS mappings; IP fields become `keyword` and conflict with other `logs-*`. 要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。  
 - Dropping `event.original`.  
 - Hard-coding a single Chinese firewall vendor as the only path — treat vendor appliances as **one class** of custom syslog/API sources among many (OT, WAF, mail gateway, PAM, etc.).  
 - Copying an official package’s copyrighted dashboards wholesale; use as structural reference and build original content.

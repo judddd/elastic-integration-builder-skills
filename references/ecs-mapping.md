@@ -35,6 +35,25 @@ When writing `fields.yml` or ingest `convert` processors, use ECS→ES types con
 
 Never map an ECS `ip` field as `keyword` or `text`.
 
+## `external: ecs` vs the Fleet zip
+
+`external: ecs` does **not** set Elasticsearch types by itself. `elastic-package build` (with `_dev/build/build.yml` `import_mappings: true`) inlines ECS `type:` into the package. A homemade rsync zip (`scripts/build_fleet_zip.sh` or the skill fallback) copies YAML unchanged; Fleet then defaults unresolved fields to **keyword**.
+
+要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。
+
+When not using `elastic-package build`, write both:
+
+```yaml
+- name: source.ip
+  type: ip
+  external: ecs
+- name: destination.ip
+  type: ip
+  external: ecs
+```
+
+Ingest `convert` to `ip` does **not** fix a keyword mapping already installed on the data stream.
+
 ## Minimum ECS set for log integrations
 
 Aim to populate when the source allows:
@@ -96,6 +115,7 @@ on_failure:
 
 - [ ] Every ECS field used exists in the **chosen ECS tag** with matching type  
 - [ ] IP fields use ingest `convert`/`ip` and mapping `ip`  
+- [ ] Zip is `elastic-package build`, **or** every ECS field in `fields/ecs.yml` has explicit `type:` (never `external: ecs` alone)  
 - [ ] `event.category` / `event.type` / `event.outcome` values are in `allowed` lists when present  
 - [ ] `sample_event.json` is Discover-friendly and matches mappings  
 - [ ] No dynamic mapping surprises for critical fields (explicit fields.yml)
