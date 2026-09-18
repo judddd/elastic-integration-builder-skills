@@ -251,7 +251,9 @@ When finishing, always summarize:
 - Shipping a rsync/zip with `external: ecs` and no explicit `type:` — Fleet will not import ECS mappings; IP fields become `keyword` and conflict with other `logs-*`. 要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。  
 - Dropping `event.original`.  
 - Hard-coding a single Chinese firewall vendor as the only path — treat vendor appliances as **one class** of custom syslog/API sources among many (OT, WAF, mail gateway, PAM, etc.).  
-- Copying an official package’s copyrighted dashboards wholesale; use as structural reference and build original content.
+- Copying an official package’s copyrighted dashboards wholesale; use as structural reference and build original content.  
+- Putting Kibana UI-export `migrationVersion.visualization: "8.8.0"` into a Fleet zip. Fleet’s package importer last knows legacy visualization **8.5.0**; install fails with `belongs to a more recent version of Kibana [8.8.0] when the last known version is [8.5.0]` even on Stack 9.x. Use `typeMigrationVersion` (visualization `8.5.0`, dashboard `10.2.0`) and omit `migrationVersion`, matching bundled packages. This is **not** an Elasticsearch version mismatch.  
+- Putting Kibana UI-export `migrationVersion.visualization: "8.8.0"` into a Fleet zip. Fleet’s package importer last knows legacy visualization **8.5.0**; install fails with `belongs to a more recent version of Kibana [8.8.0] when the last known version is [8.5.0]` even on Stack 9.x. Use `typeMigrationVersion` (visualization `8.5.0`, dashboard `10.2.0`) and omit `migrationVersion`, matching bundled packages. This is **not** an Elasticsearch version mismatch.
 
 ## References (read on demand)
 
