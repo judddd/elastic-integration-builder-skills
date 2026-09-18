@@ -123,6 +123,8 @@ Map collection reality → input (details: `references/input-patterns.md`):
 
 For listen inputs, document listen address, port, SSL, framing (`rfc6587`, newline), and vendor-side syslog config in README.
 
+**Stream template hard rule (`*.yml.hbs`):** never emit an `add_fields` processor whose `fields:` map is empty when optional UI vars are blank. Filebeat rejects that at startup (`missing required field accessing '...add_fields.fields'`) and the whole TCP/UDP input stays **FAILED** — Fleet shows the Agent as degraded and **no logs arrive**. Always keep at least one constant under `fields`, or wrap the whole `add_fields` block in `{{#if var}}` so it is omitted when unused. See `references/input-patterns.md`.
+
 ### 5) Ingest pipelines → ECS
 
 Edit `data_stream/<ds>/elasticsearch/ingest_pipeline/default.yml`.
@@ -155,7 +157,7 @@ Under `kibana/`:
 
 Export from a real Kibana when possible (`elastic-package export` / Saved Objects). If generating NDJSON by hand, keep IDs stable and references consistent.
 
-### 8) Tests, docs, build
+### 8) Tests, docs, build **and Fleet zip (required)**
 
 Minimum bar:
 
@@ -170,26 +172,53 @@ Also provide:
 - `_dev/build/docs/README.md` template → build to `docs/README.md`  
 - `changelog.yml` entry for the version  
 
-### 9) Deliverable
+**Always produce a Fleet upload `.zip` before finishing.** Kibana **Integrations → Upload integration** only accepts a zip (not a bare folder).
 
-Output a **complete folder** the user can zip or `elastic-package install`:
+Preferred (when `elastic-package` is installed):
 
-```text
-<package-name>/
-├── manifest.yml
-├── changelog.yml
-├── docs/
-├── kibana/
-├── data_stream/<ds>/
-│   ├── manifest.yml
-│   ├── fields/
-│   ├── agent/stream/*.yml.hbs
-│   ├── elasticsearch/ingest_pipeline/
-│   └── sample_event.json
-└── _dev/...
+```bash
+cd packages/<package-name>
+elastic-package build
+# Artifact is typically under build/packages/<name>-<version>.zip
 ```
 
-Tell the user the install path (Fleet → Integrations → upload zip / `elastic-package install`) and how to point the device/Agent at it.
+Fallback (no CLI — **must still ship a zip**):
+
+```bash
+# From repo: packages/<name>/ with manifest.yml name + version
+NAME=$(python3 -c "import yaml;print(yaml.safe_load(open('manifest.yml'))['name'])")
+VER=$(python3 -c "import yaml;print(yaml.safe_load(open('manifest.yml'))['version'])")
+OUT=../build
+STAGE="$OUT/${NAME}-${VER}"
+rm -rf "$STAGE" "$OUT/${NAME}-${VER}.zip"
+mkdir -p "$STAGE"
+rsync -a --exclude '.DS_Store' ./ "$STAGE/"
+( cd "$OUT" && zip -qr "${NAME}-${VER}.zip" "${NAME}-${VER}" )
+# Upload: $OUT/${NAME}-${VER}.zip
+```
+
+Zip layout **must** match EPR: root entry `<name>-<version>/manifest.yml` (not loose files at zip root).
+
+If the package has `scripts/build_fleet_zip.sh`, run that and give the user the resulting path.
+
+### 9) Deliverable
+
+Output a **complete folder** **and** the Fleet `.zip`:
+
+```text
+packages/
+├── <package-name>/          # source tree
+│   ├── manifest.yml
+│   ├── changelog.yml
+│   ├── docs/
+│   ├── kibana/
+│   ├── data_stream/<ds>/
+│   └── _dev/...
+└── build/
+    └── <package-name>-<version>.zip   # for Kibana “上传集成软件包”
+```
+
+Tell the user: Fleet → Integrations → **Upload integration** → select the `.zip`, then add the integration to an Agent policy and point the device/Agent at it.
 
 ## Match Report + build log (required output style)
 
@@ -197,14 +226,20 @@ When finishing, always summarize:
 
 1. Match Report (reuse vs create)  
 2. Package path on disk  
-3. Data stream name(s) and input type(s)  
-4. ECS fields populated (bullet list of the important ones)  
-5. How to test: simulate pipeline + expected Discover query  
-6. Open follow-ups (TLS syslog, multiline, missing fields)
+3. **Fleet upload `.zip` absolute path** (mandatory)  
+4. Data stream name(s) and input type(s)  
+5. ECS fields populated (bullet list of the important ones)  
+6. How to test: simulate pipeline + expected Discover query  
+7. Open follow-ups (TLS syslog, multiline, missing fields)
 
 ## Anti-patterns
 
 - Shipping only a Logstash conf and calling it an “integration” when the user asked for Fleet/integration.  
+- Finishing with only a source folder and **no** `<name>-<version>.zip` for Fleet upload.  
+- Zipping loose files at the archive root (must be `<name>-<version>/…`).  
+- Emitting `add_fields` with an empty `fields:` map from optional Handlebars vars (Agent input fails permanently; looks like “syslog not arriving”).  
+- Defaulting listen port to **514** without checking the Agent host — 514 is often taken by rsyslog / otel / another beat; prefer documenting a high port (e.g. 5514) or verifying bind success in Fleet Agent components.  
+- Assuming vendor syslog supports TCP when many products (e.g. JumpServer) are **UDP-only**; match the vendor protocol in both the package input and the device `SYSLOG_ADDR`.  
 - Mapping everything as `keyword` / leaving `source.ip` as text.  
 - Dropping `event.original`.  
 - Hard-coding a single Chinese firewall vendor as the only path — treat vendor appliances as **one class** of custom syslog/API sources among many (OT, WAF, mail gateway, PAM, etc.).  
@@ -223,4 +258,5 @@ When finishing, always summarize:
 
 1. Obtain samples → Match Report.  
 2. If create: scaffold package → input → pipeline → fields → sample_event → kibana → check.  
-3. Hand the folder to the user; do not stop at a pipeline paste.
+3. **Build the Fleet `.zip`** (`elastic-package build` or `_dev/build_fleet_zip.sh`) and give the user the zip path.  
+4. Hand the folder **and zip** to the user; do not stop at a pipeline paste.

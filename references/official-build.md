@@ -28,6 +28,13 @@ elastic-package lint
 elastic-package build
 elastic-package check          # format+lint+build batch
 
+# Fleet UI upload needs the built .zip (elastic-package build writes under build/)
+# If elastic-package is missing, use the fallback zip layout:
+#   ../build/<name>-<version>.zip with root folder <name>-<version>/
+#   Helper: _dev/build_fleet_zip.sh  OR:
+#   NAME=... VER=...; STAGE=../build/$NAME-$VER; mkdir -p "$STAGE"
+#   rsync -a ./ "$STAGE/"; (cd ../build && zip -r "$NAME-$VER.zip" "$NAME-$VER")
+
 # Optional local stack
 elastic-package stack up -v
 elastic-package install

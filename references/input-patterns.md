@@ -25,7 +25,51 @@ Document vendor steps: set syslog server = Agent IP, protocol TCP, port, optiona
 
 ## UDP
 
-Same as TCP but connectionless; note message size limits and loss risk. Prefer TCP when the vendor supports it.
+Same as TCP but connectionless; note message size limits and loss risk. Prefer TCP when the vendor supports it. Some products (e.g. JumpServer) are **UDP-only** — enabling only TCP in Fleet will never receive events.
+
+## Optional policy vars + `add_fields` (required pattern)
+
+Putting optional UI fields (hostname, egress IP, site code, …) into Agent `processors` via Handlebars is common — and a frequent production failure mode.
+
+**Broken** (when both optionals are empty, Filebeat fails the whole input):
+
+```hbs
+processors:
+  - add_fields:
+      target: _conf
+      fields:
+{{#if observer_hostname}}
+        observer_hostname: "{{observer_hostname}}"
+{{/if}}
+{{#if observer_ip}}
+        observer_ip: "{{observer_ip}}"
+{{/if}}
+```
+
+Symptom in Fleet: Agent **degraded**; component message like  
+`missing required field accessing 'filebeat.inputs.0.processors.N.add_fields.fields'`.
+
+**Safe** — always keep a non-empty `fields` map (constant is fine):
+
+```hbs
+processors:
+  - add_fields:
+      target: _conf
+      fields:
+        package: {{data_stream.dataset}}
+{{#if observer_hostname}}
+        observer_hostname: "{{observer_hostname}}"
+{{/if}}
+{{#if observer_ip}}
+        observer_ip: "{{observer_ip}}"
+{{/if}}
+```
+
+Or omit the entire `add_fields` block with `{{#if observer_hostname}}` / `{{#if observer_ip}}` so it is not rendered when unused.
+
+## Listen ports
+
+Defaulting to **514** is convenient but often conflicts with host `rsyslog`, `syslog-ng`, or Elastic EDOT/otel collectors already bound to 514. Prefer a documented high port (e.g. **5514**) for custom integrations, or verify after deploy that Fleet Agent components show the UDP/TCP input **HEALTHY** and `ss -ulnp` shows the Agent process on that port. Vendor `SYSLOG_ADDR` must use the same host:port.
 
 ## Syslog input
 
