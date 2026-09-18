@@ -8,11 +8,14 @@ example_vendor/
 ├── changelog.yml
 ├── validation.yml                 # optional docs structure enforcement
 ├── docs/
-│   └── README.md                  # generated; edit template under _dev/build/docs/
+│   ├── README.md                  # generated; edit template under _dev/build/docs/
+│   └── detection-rules.ndjson     # Rules → 导入规则 (required if SIEM rules exist)
 ├── img/                           # icon + screenshots
 ├── kibana/
-│   └── dashboard/
-│       └── example_vendor-Overview.json
+│   ├── dashboard/
+│   │   └── example_vendor-Overview.json
+│   └── security_rule/             # Fleet templates only; not for Rules import
+│       └── example-rule.json
 ├── _dev/
 │   └── build/
 │       ├── build.yml              # ecs import_mappings

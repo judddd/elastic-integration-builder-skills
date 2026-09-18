@@ -158,6 +158,7 @@ Under `kibana/`:
 - At least one **overview** dashboard (volume over time, top actions/severities, top source.ip / destination.ip when present).
 - One **Discover search** saved object filtered to `data_stream.dataset: "<package>.<ds>"`.
 - Optional Lens panels; keep panels bound to the integration’s data view / index pattern `logs-<package>.<ds>-*`.
+- **Detection rules (SIEM):** see `references/detection-rules.md`. Always ship `docs/detection-rules.ndjson` (one detection-engine rule per line). Kibana **Rules → 导入规则** only accepts ndjson — Fleet `kibana/security_rule/*.json` saved objects will not import there and do not auto-install into the detection engine. ES|QL rules must `KEEP` a full ECS investigation set (`host.name`, `user.name`, `source.ip`, `event.action`, `event.count`, …), never `join_ip` / `auth_cnt`. `note` (调查指南) and `description` must be in the same language as the dashboards (Chinese for CN packages). Pin `related_integrations` to a wide range (`^0.1.0`), not the current patch.
 
 Export from a real Kibana when possible (`elastic-package export` / Saved Objects). If generating NDJSON by hand, keep IDs stable and references consistent.
 
@@ -175,6 +176,7 @@ Also provide:
 - `sample_event.json` — one golden ECS document  
 - `_dev/build/docs/README.md` template → build to `docs/README.md`  
 - `changelog.yml` entry for the version  
+- If the package ships SIEM rules: `docs/detection-rules.ndjson` **inside** the Fleet zip (not a second complete zip)  
 
 **Always produce a Fleet upload `.zip` before finishing.** Kibana **Integrations → Upload integration** only accepts a zip (not a bare folder).
 
@@ -221,10 +223,10 @@ packages/
 │   ├── data_stream/<ds>/
 │   └── _dev/...
 └── build/
-    └── <package-name>-<version>.zip   # for Kibana “上传集成软件包”
+    └── <package-name>-<version>.zip   # 唯一交付：Fleet 上传；SIEM ndjson 在包内 docs/
 ```
 
-Tell the user: Fleet → Integrations → **Upload integration** → select the `.zip`, then add the integration to an Agent policy and point the device/Agent at it.
+Tell the user: Fleet → Integrations → **Upload integration** → select the `.zip`. If there are SIEM rules, unzip that same archive and **Rules → 导入规则** → `docs/detection-rules.ndjson` (not `kibana/security_rule/*.json`). Then add the integration to an Agent policy.
 
 ## Match Report + build log (required output style)
 
@@ -232,7 +234,7 @@ When finishing, always summarize:
 
 1. Match Report (reuse vs create)  
 2. Package path on disk  
-3. **Fleet upload `.zip` absolute path** (mandatory)  
+3. **Fleet upload `.zip` absolute path** (mandatory; ndjson is inside the zip at `docs/detection-rules.ndjson` when SIEM rules exist)  
 4. Data stream name(s) and input type(s)  
 5. ECS fields populated (bullet list of the important ones)  
 6. How to test: simulate pipeline + expected Discover query  
@@ -252,7 +254,11 @@ When finishing, always summarize:
 - Dropping `event.original`.  
 - Hard-coding a single Chinese firewall vendor as the only path — treat vendor appliances as **one class** of custom syslog/API sources among many (OT, WAF, mail gateway, PAM, etc.).  
 - Copying an official package’s copyrighted dashboards wholesale; use as structural reference and build original content.  
-- Putting Kibana UI-export `migrationVersion.visualization: "8.8.0"` into a Fleet zip. Fleet’s package importer last knows legacy visualization **8.5.0**; install fails with `belongs to a more recent version of Kibana [8.8.0] when the last known version is [8.5.0]` even on Stack 9.x. Use `typeMigrationVersion` (visualization `8.5.0`, dashboard `10.2.0`) and omit `migrationVersion`, matching bundled packages. This is **not** an Elasticsearch version mismatch.  
+- Putting SIEM rules only in `kibana/security_rule/*.json` and telling the user to import them under **Rules → 导入规则**. That UI only accepts detection-engine **ndjson**. Put `docs/detection-rules.ndjson` **inside** the Fleet zip. Those Fleet JSON files also do **not** appear under **添加 Elastic 规则**.  
+- Shipping a second `*-complete.zip` or a sidecar ndjson next to the Fleet zip. One `<name>-<version>.zip` is the deliverable.  
+- Pinning `related_integrations[].version` to the current package patch (`^0.1.28`). Alerts then show “版本不匹配” when Fleet is one version behind. Use a wide range (`^0.1.0`).  
+- ES|QL detection rules `KEEP host_name` / `join_ip` / `auth_cnt`. Highlighted fields then show one opaque counter; Host/User/IP stay empty. KEEP ECS names and a full investigation set.  
+- English-only `note` on a Chinese SOC package. The Alerts flyout label is 调查指南 — write the guide in Chinese (alert meaning, field glossary, Discover follow-ups).  
 - Putting Kibana UI-export `migrationVersion.visualization: "8.8.0"` into a Fleet zip. Fleet’s package importer last knows legacy visualization **8.5.0**; install fails with `belongs to a more recent version of Kibana [8.8.0] when the last known version is [8.5.0]` even on Stack 9.x. Use `typeMigrationVersion` (visualization `8.5.0`, dashboard `10.2.0`) and omit `migrationVersion`, matching bundled packages. This is **not** an Elasticsearch version mismatch.
 
 ## References (read on demand)
@@ -262,11 +268,11 @@ When finishing, always summarize:
 | `references/official-build.md` | Scaffolding, elastic-package commands, doc links |
 | `references/package-layout.md` | Exact file tree and manifest snippets |
 | `references/ecs-mapping.md` | ECS version selection + field typing rules |
-| `references/input-patterns.md` | tcp/udp/logfile/httpjson stream templates |
+| `references/detection-rules.md` | SIEM rules: Fleet security-rule vs Rules-import ndjson |
 
 ## Quick start for this skill’s operator
 
 1. Obtain samples → Match Report.  
 2. If create: scaffold package → input → pipeline → fields → sample_event → kibana → check.  
-3. **Build the Fleet `.zip`** (`elastic-package build` or `_dev/build_fleet_zip.sh`) and give the user the zip path.  
+3. **Build the Fleet `.zip`** (`elastic-package build` or `_dev/build_fleet_zip.sh`) and give the user that **one** zip path. SIEM ndjson belongs inside the zip (`docs/detection-rules.ndjson`), not a complete sidecar.  
 4. Hand the folder **and zip** to the user; do not stop at a pipeline paste.
