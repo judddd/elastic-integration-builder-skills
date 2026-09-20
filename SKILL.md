@@ -27,7 +27,8 @@ ECS field names/types: match the **target Stack** via [elastic/ecs](https://gith
 1. **Match first**: decide whether an official/community integration already fits.
 2. **Build only when needed**: if nothing fits, generate a full custom package folder.
 3. **ECS by default**: every exported field is either an ECS field (correct type) or a documented custom field under the package dataset namespace.
-4. **Runnable package**: manifests, streams, pipelines, fields, samples, dashboards/docs — not just a pipeline snippet.
+4. **Production defaults**: dashboards, searches, and detection lookbacks are sized for a live SOC (default dashboard range **last 1 hour**, not 24h). Lab-only windows, `localhost:514` listeners, and hardcoded lab IPs are not acceptable.
+5. **Runnable package**: manifests, streams, pipelines, fields, samples, dashboards/docs — not just a pipeline snippet.
 
 ## Inputs the user may give
 
@@ -153,14 +154,17 @@ When using the rsync zip fallback (or any path that is not `elastic-package buil
 
 ### 7) Dashboards and content
 
-Under `kibana/`:
+Under `kibana/` (details: `references/dashboards.md`):
 
 - At least one **overview** dashboard (volume over time, top actions/severities, top source.ip / destination.ip when present).
 - One **Discover search** saved object filtered to `data_stream.dataset: "<package>.<ds>"`.
 - Optional Lens panels; keep panels bound to the integration’s data view / index pattern `logs-<package>.<ds>-*`.
-- **Detection rules (SIEM):** see `references/detection-rules.md`. Always ship `docs/detection-rules.ndjson` (one detection-engine rule per line). Kibana **Rules → 导入规则** only accepts ndjson — Fleet `kibana/security_rule/*.json` saved objects will not import there and do not auto-install into the detection engine. ES|QL rules must `KEEP` a full ECS investigation set (`host.name`, `user.name`, `source.ip`, `event.action`, `event.count`, …), never `join_ip` / `auth_cnt`. `note` (调查指南) and `description` must be in the same language as the dashboards (Chinese for CN packages). Pin `related_integrations` to a wide range (`^0.1.0`), not the current patch.
+- **Time range hard rule:** every dashboard sets `timeRestore: true`, `timeFrom: now-1h`, `timeTo: now`, `refreshInterval: { pause: false, value: 30000 }`. **Never** ship `now-24h` (Kibana’s editor default). A 24h window on production syslog/firewall is too heavy and is not an acceptable default.
+- **Query hard rule:** every dashboard panel / saved search query must be production-safe. See `references/kibana-queries.md`. Do **not** ship ES|QL that `FROM`s multiple fat streams, `STATS VALUES(entire row)`, then `MV_EXPAND` (JumpServer 0.1.31 SSH-bypass froze production). Pattern: time-bind `?_tstart`/`?_tend`, narrow `FROM`, filter `event.action`, `KEEP` early, `IN`/`NOT IN` subquery with `KEEP` one field, `DATE_TRUNC` + `COUNT_DISTINCT`. Split Linux vs Windows into separate searches. Simple tables stay Kuery on `data_stream.dataset` + `event.action`.
+- Visualizations / Lens / saved searches must **not** pin `timeRange` / Kuery time to 24h; they follow the dashboard picker. If an export still embeds `timeRange`, use `now-1h`–`now`.
+- **Detection rules (SIEM):** see `references/detection-rules.md`. Always ship `docs/detection-rules.ndjson` (one detection-engine rule per line). Kibana **Rules → 导入规则** only accepts ndjson — Fleet `kibana/security_rule/*.json` saved objects will not import there and do not auto-install into the detection engine. ES|QL rules must `KEEP` a full ECS investigation set (`host.name`, `user.name`, `source.ip`, `event.action`, `event.count`, …), never `join_ip` / `auth_cnt`. `note` (调查指南) and `description` must be in the same language as the dashboards (Chinese for CN packages). Pin `related_integrations` to a wide range (`^0.1.0`), not the current patch. Rule `from` defaults to ~1–2h, not 24h.
 
-Export from a real Kibana when possible (`elastic-package export` / Saved Objects). If generating NDJSON by hand, keep IDs stable and references consistent.
+Export from a real Kibana when possible (`elastic-package export` / Saved Objects). After export, **rewrite** `timeFrom` to `now-1h` if Kibana saved Last 24 hours. Keep IDs stable and references consistent.
 
 ### 8) Tests, docs, build **and Fleet zip (required)**
 
@@ -246,7 +250,10 @@ When finishing, always summarize:
 - Finishing with only a source folder and **no** `<name>-<version>.zip` for Fleet upload.  
 - Zipping loose files at the archive root (must be `<name>-<version>/…`).  
 - Never hardcode customer/lab IPs in Discover or dashboards; use fields from the vendor logs (e.g. `observer.ip` from syslog source) and ES|QL rules for cross-index joins.
+- ES|QL Discover/dashboard queries that `FROM logs-system.auth-*, logs-windows.security-*, logs-*.log-*`, `STATS VALUES(concatenated event)`, then `MV_EXPAND` (JumpServer 0.1.31 SSH bypass). That pattern hung production. Follow `references/kibana-queries.md` (0.1.45): one stream per panel, `?_tstart`/`?_tend`, early `KEEP`, `NOT IN (KEEP observer.ip)`, `DATE_TRUNC` + `COUNT_DISTINCT`. Never reconstruct hit lists through `VALUES`.
+- Shipping dashboards with `timeFrom: now-24h` (or unset, which inherits Kibana Last 24 hours). Production default is **last 1 hour** (`now-1h` + `timeRestore: true` + 30s refresh). Same for vis/Lens `timeRange` and detection `from: now-24h`.
 - Emitting `add_fields` with an empty `fields:` map from optional Handlebars vars (Agent input fails permanently; looks like “syslog not arriving”).  
+- Defaulting listen address to **localhost** or port **514** — production devices send syslog to the Agent’s real bind; 514 is often taken. Default `0.0.0.0` and a high port (e.g. 5514).
 - Defaulting listen port to **514** without checking the Agent host — 514 is often taken by rsyslog / otel / another beat; prefer documenting a high port (e.g. 5514) or verifying bind success in Fleet Agent components.  
 - Assuming vendor syslog supports TCP when many products (e.g. JumpServer) are **UDP-only**; match the vendor protocol in both the package input and the device `SYSLOG_ADDR`.  
 - Mapping everything as `keyword` / leaving `source.ip` as text.  
@@ -268,6 +275,8 @@ When finishing, always summarize:
 | `references/official-build.md` | Scaffolding, elastic-package commands, doc links |
 | `references/package-layout.md` | Exact file tree and manifest snippets |
 | `references/ecs-mapping.md` | ECS version selection + field typing rules |
+| `references/dashboards.md` | Dashboard time range, refresh, vis/Lens time (production 1h) |
+| `references/kibana-queries.md` | Production-safe Kuery/ES|QL for dashboard panels (no VALUES-row bombs) |
 | `references/detection-rules.md` | SIEM rules: Fleet security-rule vs Rules-import ndjson |
 
 ## Quick start for this skill’s operator

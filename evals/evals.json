@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "我有一批网络设备日志样本（每行一条，类似 `<134>1 2026-09-10T01:02:03Z fw01 vendor - - - src=10.0.0.8 dst=8.8.8.8 action=deny policy=12`）。请先判断能不能复用 Elastic 已有 integration；如果不能，请生成一个完整的自定义 Fleet integration 文件夹，要求 ECS 合规，TCP 收集，并带 overview dashboard 说明。输出目录放到 /tmp/ei-eval-kvlog/。",
-      "expected_output": "Match Report plus a complete package folder with manifest, data_stream, tcp stream, ingest pipeline mapping to ECS (source.ip/destination.ip/event.action/etc), fields.yml, sample_event.json, and kibana/docs guidance.",
+      "expected_output": "Match Report plus a complete package folder with manifest, data_stream, tcp stream, ingest pipeline mapping to ECS (source.ip/destination.ip/event.action/etc), fields.yml, sample_event.json, and kibana/docs guidance. Overview dashboard timeFrom now-1h (not now-24h), timeRestore true.",
       "files": []
     },
     {

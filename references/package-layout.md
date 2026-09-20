@@ -14,6 +14,7 @@ example_vendor/
 ├── kibana/
 │   ├── dashboard/
 │   │   └── example_vendor-Overview.json
+│   ├── search/                    # Discover saved searches (no embedded 24h range)
 │   └── security_rule/             # Fleet templates only; not for Rules import
 │       └── example-rule.json
 ├── _dev/
@@ -83,13 +84,13 @@ streams:
       - name: listen_address
         type: text
         title: Listen Address
-        default: localhost
+        default: "0.0.0.0"
         required: true
         show_user: true
       - name: listen_port
         type: integer
         title: Listen Port
-        default: 514
+        default: 5514
         required: true
         show_user: true
       - name: tags
