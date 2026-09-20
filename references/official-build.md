@@ -6,7 +6,7 @@ Related pages (follow from that hub as needed):
 
 - [Quick start: Sample integration](https://www.elastic.co/docs/extend/integrations/quick-start)
 - [Edit ingest pipelines](https://www.elastic.co/docs/extend/integrations/edit-ingest-pipeline)
-- [Finishing touches](https://www.elastic.co/docs/extend/integrations/finishing-touches) (README template, icons, vars UX). After any Kibana export, rewrite dashboard `timeFrom` to `now-1h` — see `dashboards.md`.
+- [Finishing touches](https://www.elastic.co/docs/extend/integrations/finishing-touches) (README template, icons, vars UX). After Kibana export, set an explicit `timeFrom` for **this** data class (`dashboards.md`) — do not leave it unset.
 - Ingest processor reference (Elasticsearch docs) for grok/dissect/json/date/convert/pipeline
 
 Tooling: [`elastic-package`](https://github.com/elastic/elastic-package) CLI.

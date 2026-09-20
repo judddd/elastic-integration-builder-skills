@@ -10,7 +10,9 @@ description: >
   network/security appliances, wants to map fields to ECS, or references
   elastic-package / build-new-integration. Prefer this skill over ad-hoc Logstash
   or one-off ingest scripts when the deliverable should be an installable
-  Elastic integration folder.
+  Elastic integration folder. Before zip, run scripts/production_ship_gate.py
+  (fails cluster-killing ES|QL: VALUES of full events, FROM logs-*/metrics-*/*,
+  METADATA _id). Not syslog-only.
 ---
 
 # Elastic Integration Builder
@@ -27,8 +29,27 @@ ECS field names/types: match the **target Stack** via [elastic/ecs](https://gith
 1. **Match first**: decide whether an official/community integration already fits.
 2. **Build only when needed**: if nothing fits, generate a full custom package folder.
 3. **ECS by default**: every exported field is either an ECS field (correct type) or a documented custom field under the package dataset namespace.
-4. **Production defaults**: dashboards, searches, and detection lookbacks are sized for a live SOC (default dashboard range **last 1 hour**, not 24h). Lab-only windows, `localhost:514` listeners, and hardcoded lab IPs are not acceptable.
+4. **Queries must not hang the cluster**: packaged ES|QL/Kuery is a ship blocker equal to ECS. Dashboard time windows follow data volume (see `dashboards.md`) — this is not a syslog-only skill.
 5. **Runnable package**: manifests, streams, pipelines, fields, samples, dashboards/docs — not just a pipeline snippet.
+
+## Query ship gate (blocking)
+
+This skill builds **any** Fleet integration (syslog, files, httpjson, metrics, winlog, …). The gate only bans query shapes that can take down Elasticsearch. It does **not** require a PAM correlation panel, `observer.ip`, or `now-1h` on every dashboard.
+
+**Before** zip, run:
+
+```bash
+python3 scripts/production_ship_gate.py /absolute/path/to/packages/<name>
+```
+
+- `RESULT: PASS` → you may zip. `RESULT: FAIL` → fix queries; not a deliverable.
+- Read `references/kibana-queries.md` before writing ES|QL. `VALUES()` is for small dimensions, never for stashing full events.
+
+| Always fail | Guidance (not a universal number) |
+| --- | --- |
+| `VALUES(row)` / `CONCAT`+`VALUES`+`MV_EXPAND` / `METADATA _id` | High-volume **event** dashboards: start at last **1 hour**. Metrics / sparse / official copies: 24h is normal. |
+| `FROM logs-*` / `metrics-*` / `*` or one FROM of many unrelated streams | Listen inputs (tcp/udp/syslog) only: bind `0.0.0.0`, avoid port 514 if it will collide. |
+| `KEEP *` before STATS/joins | Honor an explicit user time window. Do not overwrite a cluster they said is already optimized. |
 
 ## Inputs the user may give
 
@@ -156,15 +177,14 @@ When using the rsync zip fallback (or any path that is not `elastic-package buil
 
 Under `kibana/` (details: `references/dashboards.md`):
 
-- At least one **overview** dashboard (volume over time, top actions/severities, top source.ip / destination.ip when present).
-- One **Discover search** saved object filtered to `data_stream.dataset: "<package>.<ds>"`.
-- Optional Lens panels; keep panels bound to the integration’s data view / index pattern `logs-<package>.<ds>-*`.
-- **Time range hard rule:** every dashboard sets `timeRestore: true`, `timeFrom: now-1h`, `timeTo: now`, `refreshInterval: { pause: false, value: 30000 }`. **Never** ship `now-24h` (Kibana’s editor default). A 24h window on production syslog/firewall is too heavy and is not an acceptable default.
-- **Query hard rule:** every dashboard panel / saved search query must be production-safe. See `references/kibana-queries.md`. Do **not** ship ES|QL that `FROM`s multiple fat streams, `STATS VALUES(entire row)`, then `MV_EXPAND` (JumpServer 0.1.31 SSH-bypass froze production). Pattern: time-bind `?_tstart`/`?_tend`, narrow `FROM`, filter `event.action`, `KEEP` early, `IN`/`NOT IN` subquery with `KEEP` one field, `DATE_TRUNC` + `COUNT_DISTINCT`. Split Linux vs Windows into separate searches. Simple tables stay Kuery on `data_stream.dataset` + `event.action`.
-- Visualizations / Lens / saved searches must **not** pin `timeRange` / Kuery time to 24h; they follow the dashboard picker. If an export still embeds `timeRange`, use `now-1h`–`now`.
-- **Detection rules (SIEM):** see `references/detection-rules.md`. Always ship `docs/detection-rules.ndjson` (one detection-engine rule per line). Kibana **Rules → 导入规则** only accepts ndjson — Fleet `kibana/security_rule/*.json` saved objects will not import there and do not auto-install into the detection engine. ES|QL rules must `KEEP` a full ECS investigation set (`host.name`, `user.name`, `source.ip`, `event.action`, `event.count`, …), never `join_ip` / `auth_cnt`. `note` (调查指南) and `description` must be in the same language as the dashboards (Chinese for CN packages). Pin `related_integrations` to a wide range (`^0.1.0`), not the current patch. Rule `from` defaults to ~1–2h, not 24h.
+- At least one **overview** dashboard: volume over time plus top dimensions **this dataset has** (action, status, `source.ip`, `service.name`, …).
+- One **Discover search** filtered to `data_stream.dataset: "<package>.<ds>"`.
+- Panels bound to the integration data view (`logs-<package>.<ds>-*` or `metrics-…`).
+- **Time range:** set `timeRestore: true` and an explicit window. High-volume events → start at `now-1h`. Metrics / low-volume → `now-24h` is fine. See `references/dashboards.md`.
+- **Query hard rule:** `references/kibana-queries.md`. Never `VALUES` a full event / `FROM logs-*`. Simple tables stay Kuery. Split unrelated streams into separate searches.
+- **Detection rules (SIEM):** only if this is a security deliverable or the user asked. See `references/detection-rules.md`. Ship `docs/detection-rules.ndjson` for **Rules → 导入规则**. ES|QL rules `KEEP` real ECS investigation fields. `note` language matches the dashboards.
 
-Export from a real Kibana when possible (`elastic-package export` / Saved Objects). After export, **rewrite** `timeFrom` to `now-1h` if Kibana saved Last 24 hours. Keep IDs stable and references consistent.
+Export from a real Kibana when possible. Keep IDs stable. After export, keep a sensible window for **this** data class — do not blindly rewrite every official 24h metrics dashboard to 1h.
 
 ### 8) Tests, docs, build **and Fleet zip (required)**
 
@@ -172,6 +192,8 @@ Minimum bar:
 
 ```bash
 elastic-package check    # format + lint + build when tooling exists
+python3 /path/to/this-skill/scripts/production_ship_gate.py packages/<name>
+# must print RESULT: PASS — otherwise stop, do not zip
 ```
 
 Also provide:
@@ -213,6 +235,8 @@ Zip layout **must** match EPR: root entry `<name>-<version>/manifest.yml` (not l
 
 If the package has `scripts/build_fleet_zip.sh`, run that and give the user the resulting path.
 
+**Zip is forbidden until** `python3 scripts/production_ship_gate.py <package-dir>` prints `RESULT: PASS`. A FAIL log means step 8 did not happen.
+
 ### 9) Deliverable
 
 Output a **complete folder** **and** the Fleet `.zip`:
@@ -242,20 +266,19 @@ When finishing, always summarize:
 4. Data stream name(s) and input type(s)  
 5. ECS fields populated (bullet list of the important ones)  
 6. How to test: simulate pipeline + expected Discover query  
-7. Open follow-ups (TLS syslog, multiline, missing fields)
+7. Open follow-ups (TLS, multiline, missing fields, extra event types)  
+8. **Query ship gate**: paste `RESULT: PASS` stdout. FAIL means do not zip.
 
 ## Anti-patterns
 
 - Shipping only a Logstash conf and calling it an “integration” when the user asked for Fleet/integration.  
 - Finishing with only a source folder and **no** `<name>-<version>.zip` for Fleet upload.  
 - Zipping loose files at the archive root (must be `<name>-<version>/…`).  
-- Never hardcode customer/lab IPs in Discover or dashboards; use fields from the vendor logs (e.g. `observer.ip` from syslog source) and ES|QL rules for cross-index joins.
-- ES|QL Discover/dashboard queries that `FROM logs-system.auth-*, logs-windows.security-*, logs-*.log-*`, `STATS VALUES(concatenated event)`, then `MV_EXPAND` (JumpServer 0.1.31 SSH bypass). That pattern hung production. Follow `references/kibana-queries.md` (0.1.45): one stream per panel, `?_tstart`/`?_tend`, early `KEEP`, `NOT IN (KEEP observer.ip)`, `DATE_TRUNC` + `COUNT_DISTINCT`. Never reconstruct hit lists through `VALUES`.
-- Shipping dashboards with `timeFrom: now-24h` (or unset, which inherits Kibana Last 24 hours). Production default is **last 1 hour** (`now-1h` + `timeRestore: true` + 30s refresh). Same for vis/Lens `timeRange` and detection `from: now-24h`.
+- Never hardcode customer/lab IPs in Discover or dashboards; use fields the pipeline actually sets.
+- Packaged ES|QL that `VALUES`s concatenated/full events then `MV_EXPAND`, or `FROM logs-*` / many unrelated streams in one panel. See `references/kibana-queries.md`.
+- Leaving dashboard `timeFrom` unset. High-volume event UIs should not silently inherit Last 24 hours; metrics UIs may use 24h on purpose.
 - Emitting `add_fields` with an empty `fields:` map from optional Handlebars vars (Agent input fails permanently; looks like “syslog not arriving”).  
-- Defaulting listen address to **localhost** or port **514** — production devices send syslog to the Agent’s real bind; 514 is often taken. Default `0.0.0.0` and a high port (e.g. 5514).
-- Defaulting listen port to **514** without checking the Agent host — 514 is often taken by rsyslog / otel / another beat; prefer documenting a high port (e.g. 5514) or verifying bind success in Fleet Agent components.  
-- Assuming vendor syslog supports TCP when many products (e.g. JumpServer) are **UDP-only**; match the vendor protocol in both the package input and the device `SYSLOG_ADDR`.  
+- For **listen** inputs only: defaulting bind to localhost or port 514 (514 often collides with rsyslog). Use `0.0.0.0` and a high port. Match the vendor’s TCP vs UDP; do not assume TCP.  
 - Mapping everything as `keyword` / leaving `source.ip` as text.  
 - Shipping a rsync/zip with `external: ecs` and no explicit `type:` — Fleet will not import ECS mappings; IP fields become `keyword` and conflict with other `logs-*`. 要么 zip 改成 elastic-package build，要么所有 ECS 字段都带明确 type，不能再只写 external: ecs。  
 - Dropping `event.original`.  
@@ -275,13 +298,15 @@ When finishing, always summarize:
 | `references/official-build.md` | Scaffolding, elastic-package commands, doc links |
 | `references/package-layout.md` | Exact file tree and manifest snippets |
 | `references/ecs-mapping.md` | ECS version selection + field typing rules |
-| `references/dashboards.md` | Dashboard time range, refresh, vis/Lens time (production 1h) |
-| `references/kibana-queries.md` | Production-safe Kuery/ES|QL for dashboard panels (no VALUES-row bombs) |
+| `references/dashboards.md` | Time windows by data class (high-volume events vs metrics) |
+| `references/kibana-queries.md` | ES|QL/Kuery habits; forbidden VALUES-of-event shapes |
+| `scripts/production_ship_gate.py` | Pre-zip query-shape scan; FAIL = do not zip |
 | `references/detection-rules.md` | SIEM rules: Fleet security-rule vs Rules-import ndjson |
 
 ## Quick start for this skill’s operator
 
 1. Obtain samples → Match Report.  
 2. If create: scaffold package → input → pipeline → fields → sample_event → kibana → check.  
-3. **Build the Fleet `.zip`** (`elastic-package build` or `_dev/build_fleet_zip.sh`) and give the user that **one** zip path. SIEM ndjson belongs inside the zip (`docs/detection-rules.ndjson`), not a complete sidecar.  
-4. Hand the folder **and zip** to the user; do not stop at a pipeline paste.
+3. **Run `scripts/production_ship_gate.py`** on the package dir. FAIL → fix query shape; do not zip.  
+4. **Build the Fleet `.zip`** only after PASS (`elastic-package build` or `_dev/build_fleet_zip.sh`) and give the user that **one** zip path. SIEM ndjson belongs inside the zip (`docs/detection-rules.ndjson`), not a complete sidecar.  
+5. Hand the folder **and zip** to the user; do not stop at a pipeline paste.

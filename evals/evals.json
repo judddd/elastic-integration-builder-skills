@@ -18,6 +18,18 @@
       "prompt": "我拿到一个 JSON API 导出（NDJSON），字段有 ts、client_ip、url、status、user。请按 elastic.co build-new-integration 流程搭一个 httpjson/logfile 可用的 integration 包骨架，字段对齐 ECS（@timestamp、source.ip、url.original、http.response.status_code、user.name），并写出 ingest pipeline 与 sample_event。输出到 /tmp/ei-eval-jsonapi/。",
       "expected_output": "Scaffolded integration with ECS-typed fields, pipeline converting JSON to ECS, sample_event.json, package layout matching elastic-package conventions.",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "给堡垒机 PAM 做一个 SSH 绕过 Discover：要能看出哪些 SSH 登录的 source.ip 不在堡垒机 observer.ip 里。不要把我现网已经优化过的包覆盖掉。",
+      "expected_output": "Linux vs Windows are separate searches. ES|QL: FROM one stream, time-bound, KEEP short fields, NOT IN (KEEP join key), DATE_TRUNC + COUNT_DISTINCT. Must NOT contain VALUES(row), CONCAT+VALUES+MV_EXPAND, METADATA _id, or FROM logs-*. Do not upload to the customer cluster.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Kibana 导出的 dashboard 默认 Last 24 hours，这是 metrics 包，直接打进 zip 就行。",
+      "expected_output": "24h is acceptable for metrics. Set timeRestore true. Do not rewrite to now-1h just because a syslog package would. Query-shape gate still must not contain VALUES-of-event ES|QL.",
+      "files": []
     }
   ]
 }
