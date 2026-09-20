@@ -10,7 +10,10 @@ description: >
   network/security appliances, wants to map fields to ECS, or references
   elastic-package / build-new-integration. Prefer this skill over ad-hoc Logstash
   or one-off ingest scripts when the deliverable should be an installable
-  Elastic integration folder. Before zip, run scripts/production_ship_gate.py
+  Elastic integration folder. Before writing Kibana dashboards or Lens, load
+  `kibana-dashboards`. Before writing alerting or SIEM/security rules, load
+  `kibana-alerting-rules` (and this skill's `references/detection-rules.md` for
+  packaged detection-engine ndjson). Before zip, run scripts/production_ship_gate.py
   (fails cluster-killing ES|QL: VALUES of full events, FROM logs-*/metrics-*/*,
   METADATA _id). Not syslog-only.
 ---
@@ -23,6 +26,20 @@ Canonical how-to (read when scaffolding or stuck):
 https://www.elastic.co/docs/extend/integrations/build-new-integration
 
 ECS field names/types: match the **target Stack** via [elastic/ecs](https://github.com/elastic/ecs) + [ECS reference](https://www.elastic.co/docs/reference/ecs). Details: `references/ecs-mapping.md`.
+
+## Required sibling skills (load before writing Kibana content)
+
+This skill owns the **Fleet package** (layout, ECS, pipelines, zip, query ship gate). Official Elastic skills own **how to author Kibana objects**. Do not invent dashboard JSON or rule payloads from memory when those skills are available.
+
+Load them by name (`kibana-dashboards`, `kibana-alerting-rules`) from the Elastic agent-skills set / Cursor Elastic plugin. Read each `SKILL.md` **before** creating or editing the corresponding artifacts. If a skill is missing, stop and tell the user to install [elastic/agent-skills](https://github.com/elastic/agent-skills/tree/main/skills/kibana) — do not skip the load and guess APIs.
+
+| You are about to… | Load first | Then still follow |
+| --- | --- | --- |
+| Create/update dashboards, Lens, visualizations, `kibana/dashboard`, `kibana/visualization` | **`kibana-dashboards`** | `references/dashboards.md`, `references/kibana-queries.md`, `production_ship_gate.py` |
+| Create/update Kibana **alerting** rules (threshold, es-query, metric) | **`kibana-alerting-rules`** | Package docs if the rule is shipped with the integration |
+| Create/update **SIEM / security detection** rules (`security-rule`, detection-engine ndjson) | **`kibana-alerting-rules`** for rule lifecycle/params habits, then this skill's packaging rules | `references/detection-rules.md` (Fleet JSON ≠ Rules-import ndjson) |
+
+Do not substitute one for the other: `kibana-dashboards` does not create rules; `kibana-alerting-rules` does not create Lens panels. After those skills produce valid bodies, **adapt** them into the package tree (`kibana/…`, `docs/detection-rules.ndjson`) — do not finish with only a live Kibana PUT if the user asked for a Fleet zip.
 
 ## Goals
 
@@ -175,14 +192,14 @@ When using the rsync zip fallback (or any path that is not `elastic-package buil
 
 ### 7) Dashboards and content
 
-Under `kibana/` (details: `references/dashboards.md`):
+**Load `kibana-dashboards` before any dashboard/Lens work.** Under `kibana/` (details: `references/dashboards.md`):
 
 - At least one **overview** dashboard: volume over time plus top dimensions **this dataset has** (action, status, `source.ip`, `service.name`, …).
 - One **Discover search** filtered to `data_stream.dataset: "<package>.<ds>"`.
 - Panels bound to the integration data view (`logs-<package>.<ds>-*` or `metrics-…`).
 - **Time range:** set `timeRestore: true` and an explicit window. High-volume events → start at `now-1h`. Metrics / low-volume → `now-24h` is fine. See `references/dashboards.md`.
 - **Query hard rule:** `references/kibana-queries.md`. Never `VALUES` a full event / `FROM logs-*`. Simple tables stay Kuery. Split unrelated streams into separate searches.
-- **Detection rules (SIEM):** only if this is a security deliverable or the user asked. See `references/detection-rules.md`. Ship `docs/detection-rules.ndjson` for **Rules → 导入规则**. ES|QL rules `KEEP` real ECS investigation fields. `note` language matches the dashboards.
+- **Detection rules (SIEM):** only if this is a security deliverable or the user asked. **Load `kibana-alerting-rules` first**, then `references/detection-rules.md`. Ship `docs/detection-rules.ndjson` for **Rules → 导入规则**. ES|QL rules `KEEP` real ECS investigation fields. `note` language matches the dashboards.
 
 Export from a real Kibana when possible. Keep IDs stable. After export, keep a sensible window for **this** data class — do not blindly rewrite every official 24h metrics dashboard to 1h.
 
@@ -298,7 +315,9 @@ When finishing, always summarize:
 | `references/official-build.md` | Scaffolding, elastic-package commands, doc links |
 | `references/package-layout.md` | Exact file tree and manifest snippets |
 | `references/ecs-mapping.md` | ECS version selection + field typing rules |
-| `references/dashboards.md` | Time windows by data class (high-volume events vs metrics) |
+| `kibana-dashboards` (Elastic skill) | **Required** before creating/updating dashboards or Lens |
+| `kibana-alerting-rules` (Elastic skill) | **Required** before creating/updating alerting or SIEM/security rules |
+| `references/dashboards.md` | Time windows by data class (high-volume events vs metrics); package `kibana/` layout |
 | `references/kibana-queries.md` | ES|QL/Kuery habits; forbidden VALUES-of-event shapes |
 | `scripts/production_ship_gate.py` | Pre-zip query-shape scan; FAIL = do not zip |
 | `references/detection-rules.md` | SIEM rules: Fleet security-rule vs Rules-import ndjson |

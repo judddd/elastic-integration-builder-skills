@@ -1,5 +1,7 @@
 # Kibana dashboards
 
+**Before writing or editing any dashboard / Lens / visualization**, load the Elastic skill **`kibana-dashboards`** (`elastic/agent-skills` → `skills/kibana/kibana-dashboards`). Use it for Dashboards/Visualizations API shape, dataset type (`data_view` vs ES|QL), and panel JSON. This file only adds **Fleet package** constraints (time windows, data view, ship gate).
+
 Dashboards should match **data volume and product type**. This skill generates firewall syslog, HTTP APIs, metrics, and everything in between — do not force a SOC-syslog layout on a metrics package.
 
 ## Time picker (defaults, not a single hard number)

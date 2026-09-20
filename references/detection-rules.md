@@ -1,5 +1,7 @@
 # Detection rules for custom Fleet packages
 
+**Before writing or editing any Kibana alerting or SIEM/security rule**, load the Elastic skill **`kibana-alerting-rules`** (`elastic/agent-skills` → `skills/kibana/kibana-alerting-rules`). Use it for rule types, params, schedule, and lifecycle (enable/disable/mute). This file only adds **how those rules ship inside a Fleet zip**.
+
 Fleet `kibana/security_rule/*.json` are **saved objects** (`type: security-rule`). They land as integration assets. They do **not** appear under Security → **添加 Elastic 规则** (that catalog is `security_detection_engine` only), and **Rules → 导入规则** rejects them.
 
 ## Always ship a detection-engine `.ndjson`
